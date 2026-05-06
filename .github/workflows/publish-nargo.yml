@@ -43,7 +43,7 @@ jobs:
 
 
       - name: Setup toolchain
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.target }}
 
@@ -150,7 +150,7 @@ jobs:
           ref: ${{ inputs.tag || env.GITHUB_REF }}
 
       - name: Setup toolchain
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.target }}
 
