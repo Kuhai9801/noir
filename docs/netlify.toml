@@ -1,5 +1,0 @@
-[build]
-  # Only build if changes are made in the docs directory
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF"
-  base = "docs"
-  functions = "netlify/functions"
