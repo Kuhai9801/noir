@@ -32,4 +32,4 @@ jobs:
 
       - name: Run targeted cache test
         if: inputs.target == 'cache'
-        run: cargo test -p noirc_driver validation_options_hash_tracks_skipped_validation_checks --lib
+        run: cargo test -p noirc_driver validation_options_hash --lib
