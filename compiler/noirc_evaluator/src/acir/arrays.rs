@@ -826,13 +826,10 @@ impl Context<'_> {
                 // The value is an array with items in a different memory block;
                 // read all values from the source memory block into an Array structure,
                 // then store that into the target memory block.
-                let values = try_vecmap(0..len.to_usize(), |i| {
-                    let index_var = self.acir_context.add_constant(i);
-                    let read = self.acir_context.read_from_memory(*inner_block_id, &index_var)?;
-                    let typ = value_types[i % value_types.len()];
-                    Ok::<AcirValue, RuntimeError>(AcirValue::Var(read, typ))
-                })?;
-                self.array_set_value(&AcirValue::Array(values.into()), block_id, var_index)?;
+                let values = self
+                    .read_dynamic_array(*inner_block_id, *len, value_types)
+                    .collect::<Result<_, _>>()?;
+                self.array_set_value(&AcirValue::Array(values), block_id, var_index)?;
             }
         }
         Ok(())
@@ -932,7 +929,7 @@ impl Context<'_> {
         if !matches!(&dfg[array_id], Value::Instruction { .. } | Value::Param { .. }) {
             return Err(InternalError::Unexpected {
                 expected: "array or instruction".to_owned(),
-                found: format!("{:?}", &dfg[array_id]),
+                found: format!("{:?}", dfg[array_id]),
                 call_stack: self.acir_context.get_call_stack(),
             }
             .into());
