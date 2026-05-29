@@ -150,6 +150,35 @@ popd >/dev/null
   for f in "$LOG_DIR"/*.exit; do
     echo "| $(basename "$f" .exit) | $(cat "$f") |"
   done
+  echo
+  echo "## Classifier"
+  echo
+  if grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_clean_default.log" \
+    && ! grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_default_after_skip.log" \
+    && grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_force_after_skip.log"; then
+    echo "- cache_validation: REPRODUCED - default compile after skipped-check cache hit suppresses the Brillig coverage diagnostic seen on clean/force compiles."
+  else
+    echo "- cache_validation: NOT REPRODUCED by this script - inspect cache_*.log."
+  fi
+
+  if grep -q "Assertion is always false" "$LOG_DIR/cast_execute.log" \
+    && grep -q "assert(z == 255)" "$LOG_DIR/cast_execute.log"; then
+    echo "- cast_composition: REPRODUCED - Noir proves the source-expected z == 255 assertion false for i8 -> u8 -> i16."
+  else
+    echo "- cast_composition: NOT REPRODUCED by this script - inspect cast_execute.log."
+  fi
+
+  if grep -q "Circuit witness successfully solved" "$LOG_DIR/mutable_array_execute.log"; then
+    echo "- mutable_array_set_alias: NOT REPRODUCED at this source level - high-level program preserves value semantics; SSA unit repro still needed for the lower-level claim."
+  else
+    echo "- mutable_array_set_alias: POSSIBLY REPRODUCED - inspect mutable_array_execute.log."
+  fi
+
+  if grep -q "Circuit output: 0x01" "$LOG_DIR/vector_execute.log"; then
+    echo "- vector_intrinsic_cache: NOT REPRODUCED at this source level - fresh vector returned 1; SSA/lowering-specific repro still needed."
+  else
+    echo "- vector_intrinsic_cache: POSSIBLY REPRODUCED - inspect vector_execute.log."
+  fi
 } | tee "$LOG_DIR/summary.md"
 
 echo "Logs written to $LOG_DIR"
