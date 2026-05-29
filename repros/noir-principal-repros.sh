@@ -75,11 +75,18 @@ NR
 pushd "$WORK_DIR/cache_validation" >/dev/null
 run_case cache_clean_default "$NARGO" compile --force
 run_case cache_skip "$NARGO" compile --skip-brillig-constraints-check --skip-underconstrained-check
+sha256sum target/*.json >"$LOG_DIR/cache_hash_after_skip.txt" 2>&1 || true
+stat -c "%n %Y %s" target/*.json >"$LOG_DIR/cache_stat_after_skip.txt" 2>&1 || true
+sleep 1
 run_case cache_default_after_skip "$NARGO" compile
+sha256sum target/*.json >"$LOG_DIR/cache_hash_after_default.txt" 2>&1 || true
+stat -c "%n %Y %s" target/*.json >"$LOG_DIR/cache_stat_after_default.txt" 2>&1 || true
 run_case cache_force_after_skip "$NARGO" compile --force
 popd >/dev/null
 
-# 2. Cast composition. Reproduced if this execution fails the z == 255 assert.
+# 2. Cast composition. Reproduced if the individual cast controls pass but the
+# composed i8 -> u8 -> i16 chain fails the source-expected z == 255 assert or
+# returns a value other than 255.
 make_pkg cast_composition
 cat >"$WORK_DIR/cast_composition/src/main.nr" <<'NR'
 fn main(x: i8) -> pub i16 {
@@ -95,6 +102,50 @@ x = -1
 TOML
 pushd "$WORK_DIR/cast_composition" >/dev/null
 run_case cast_execute "$NARGO" execute
+popd >/dev/null
+
+make_pkg cast_intermediate_control
+cat >"$WORK_DIR/cast_intermediate_control/src/main.nr" <<'NR'
+fn main(x: i8) -> pub u8 {
+    assert(x == -1);
+    let y: u8 = x as u8;
+    assert(y == 255);
+    y
+}
+NR
+cat >"$WORK_DIR/cast_intermediate_control/Prover.toml" <<'TOML'
+x = -1
+TOML
+pushd "$WORK_DIR/cast_intermediate_control" >/dev/null
+run_case cast_intermediate_control "$NARGO" execute
+popd >/dev/null
+
+make_pkg cast_literal_control
+cat >"$WORK_DIR/cast_literal_control/src/main.nr" <<'NR'
+fn main() -> pub i16 {
+    let z: i16 = 255 as i16;
+    assert(z == 255);
+    z
+}
+NR
+pushd "$WORK_DIR/cast_literal_control" >/dev/null
+run_case cast_literal_control "$NARGO" execute
+popd >/dev/null
+
+make_pkg cast_output_observation
+cat >"$WORK_DIR/cast_output_observation/src/main.nr" <<'NR'
+fn main(x: i8) -> pub i16 {
+    assert(x == -1);
+    let y: u8 = x as u8;
+    let z: i16 = y as i16;
+    z
+}
+NR
+cat >"$WORK_DIR/cast_output_observation/Prover.toml" <<'TOML'
+x = -1
+TOML
+pushd "$WORK_DIR/cast_output_observation" >/dev/null
+run_case cast_output_observation "$NARGO" execute
 popd >/dev/null
 
 # 3. Mutable array-set aliasing. Reproduced if value semantics are broken and
@@ -151,19 +202,43 @@ popd >/dev/null
     echo "| $(basename "$f" .exit) | $(cat "$f") |"
   done
   echo
+  echo "## Cache artifact hashes"
+  echo
+  echo "after skipped-check compile:"
+  sed 's/^/  /' "$LOG_DIR/cache_hash_after_skip.txt" 2>/dev/null || true
+  sed 's/^/  /' "$LOG_DIR/cache_stat_after_skip.txt" 2>/dev/null || true
+  echo
+  echo "after later default compile:"
+  sed 's/^/  /' "$LOG_DIR/cache_hash_after_default.txt" 2>/dev/null || true
+  sed 's/^/  /' "$LOG_DIR/cache_stat_after_default.txt" 2>/dev/null || true
+  echo
   echo "## Classifier"
   echo
   if grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_clean_default.log" \
     && ! grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_default_after_skip.log" \
+    && grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_force_after_skip.log" \
+    && cmp -s "$LOG_DIR/cache_hash_after_skip.txt" "$LOG_DIR/cache_hash_after_default.txt" \
+    && cmp -s "$LOG_DIR/cache_stat_after_skip.txt" "$LOG_DIR/cache_stat_after_default.txt"; then
+    echo "- cache_validation: STRONGLY REPRODUCED - default compile after skipped-check cache hit suppresses the Brillig coverage diagnostic seen on clean/force compiles, and the target artifact hash/stat are unchanged."
+  elif grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_clean_default.log" \
+    && ! grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_default_after_skip.log" \
     && grep -q "Brillig function call isn't properly covered" "$LOG_DIR/cache_force_after_skip.log"; then
-    echo "- cache_validation: REPRODUCED - default compile after skipped-check cache hit suppresses the Brillig coverage diagnostic seen on clean/force compiles."
+    echo "- cache_validation: REPRODUCED - default compile after skipped-check cache hit suppresses the Brillig coverage diagnostic seen on clean/force compiles. Artifact hash/stat comparison did not fully match; inspect cache_hash/cache_stat logs."
   else
     echo "- cache_validation: NOT REPRODUCED by this script - inspect cache_*.log."
   fi
 
   if grep -q "Assertion is always false" "$LOG_DIR/cast_execute.log" \
+    && grep -q "assert(z == 255)" "$LOG_DIR/cast_execute.log" \
+    && grep -q "Circuit output: 0xff" "$LOG_DIR/cast_intermediate_control.log" \
+    && grep -q "Circuit output: 0xff" "$LOG_DIR/cast_literal_control.log"; then
+    echo "- cast_composition: STRONGLY REPRODUCED - controls prove -1i8 -> u8 is 255 and 255 -> i16 is valid, but the composed i8 -> u8 -> i16 chain makes z == 255 fail."
+    if grep -q "Circuit output:" "$LOG_DIR/cast_output_observation.log"; then
+      echo "  observed composed-chain output: $(grep 'Circuit output:' "$LOG_DIR/cast_output_observation.log" | tail -n1)"
+    fi
+  elif grep -q "Assertion is always false" "$LOG_DIR/cast_execute.log" \
     && grep -q "assert(z == 255)" "$LOG_DIR/cast_execute.log"; then
-    echo "- cast_composition: REPRODUCED - Noir proves the source-expected z == 255 assertion false for i8 -> u8 -> i16."
+    echo "- cast_composition: REPRODUCED - Noir proves the source-expected z == 255 assertion false for i8 -> u8 -> i16. Controls need inspection."
   else
     echo "- cast_composition: NOT REPRODUCED by this script - inspect cast_execute.log."
   fi
