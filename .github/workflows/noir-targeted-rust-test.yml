@@ -1,0 +1,35 @@
+name: Noir targeted Rust test
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to test
+        required: true
+      target:
+        description: Targeted test group
+        required: true
+        type: choice
+        options:
+          - cast
+          - cache
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Run targeted cast test
+        if: inputs.target == 'cast'
+        run: cargo test -p noirc_evaluator does_not_simplify_through_observable_truncating_cast_boundary --lib
+
+      - name: Run targeted cache test
+        if: inputs.target == 'cache'
+        run: cargo test -p noirc_driver validation_options_hash_tracks_skipped_validation_checks --lib
