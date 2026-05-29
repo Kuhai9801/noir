@@ -230,8 +230,8 @@ popd >/dev/null
 
   if grep -q "Assertion is always false" "$LOG_DIR/cast_execute.log" \
     && grep -q "assert(z == 255)" "$LOG_DIR/cast_execute.log" \
-    && grep -q "Circuit output: 0xff" "$LOG_DIR/cast_intermediate_control.log" \
-    && grep -q "Circuit output: 0xff" "$LOG_DIR/cast_literal_control.log"; then
+    && grep -q "Circuit output: 255" "$LOG_DIR/cast_intermediate_control.log" \
+    && grep -q "Circuit output: 255" "$LOG_DIR/cast_literal_control.log"; then
     echo "- cast_composition: STRONGLY REPRODUCED - controls prove -1i8 -> u8 is 255 and 255 -> i16 is valid, but the composed i8 -> u8 -> i16 chain makes z == 255 fail."
     if grep -q "Circuit output:" "$LOG_DIR/cast_output_observation.log"; then
       echo "  observed composed-chain output: $(grep 'Circuit output:' "$LOG_DIR/cast_output_observation.log" | tail -n1)"
